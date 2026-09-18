@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import * as Linking from 'expo-linking';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -136,8 +137,10 @@ export default function ListingDetailScreen() {
 
   const onShare = () => {
     if (!listing) return;
+    const url = Linking.createURL(`/listing/${listing.id}`);
     Share.share({
-      message: `Mirá "${listing.title}" en Vint AR — ${formatPrice(Number(listing.price))}`,
+      message: `Mirá "${listing.title}" en Vint AR — ${formatPrice(Number(listing.price))}\n${url}`,
+      url,
     });
   };
 
