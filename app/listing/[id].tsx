@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -29,11 +30,16 @@ export default function ListingDetailScreen() {
 
   const [listing, setListing] = useState<Listing | null>(null);
   const [seller, setSeller] = useState<Profile | null>(null);
+  const [soldToBuyer, setSoldToBuyer] = useState<Profile | null>(null);
   const [rating, setRating] = useState<{ avg: number; count: number } | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isStartingChat, setIsStartingChat] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [isSoldModalVisible, setIsSoldModalVisible] = useState(false);
+  const [buyers, setBuyers] = useState<Profile[]>([]);
+  const [isLoadingBuyers, setIsLoadingBuyers] = useState(false);
+  const [isMarkingSold, setIsMarkingSold] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -64,6 +70,18 @@ export default function ListingDetailScreen() {
     ]);
 
     setSeller(sellerData ?? null);
+
+    if (listingData.sold_to) {
+      const { data: buyerData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', listingData.sold_to)
+        .single();
+      setSoldToBuyer(buyerData ?? null);
+    } else {
+      setSoldToBuyer(null);
+    }
+
     if (ratingsData && ratingsData.length > 0) {
       const avg = ratingsData.reduce((sum, r) => sum + r.stars, 0) / ratingsData.length;
       setRating({ avg, count: ratingsData.length });
@@ -134,6 +152,44 @@ export default function ListingDetailScreen() {
       router.push({ pathname: '/chat/[conversationId]', params: { conversationId: created.id } });
     } finally {
       setIsStartingChat(false);
+    }
+  };
+
+  const openSoldModal = async () => {
+    if (!listing || !session) return;
+    setIsSoldModalVisible(true);
+    setIsLoadingBuyers(true);
+    const { data: conversations } = await supabase
+      .from('conversations')
+      .select('buyer_id')
+      .eq('listing_id', listing.id)
+      .eq('seller_id', session.user.id);
+
+    const buyerIds = [...new Set((conversations ?? []).map((c) => c.buyer_id))];
+    if (buyerIds.length === 0) {
+      setBuyers([]);
+      setIsLoadingBuyers(false);
+      return;
+    }
+    const { data: buyerProfiles } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', buyerIds);
+    setBuyers(buyerProfiles ?? []);
+    setIsLoadingBuyers(false);
+  };
+
+  const markAsSold = async (buyerId: string) => {
+    if (!listing) return;
+    setIsMarkingSold(true);
+    const { error } = await supabase
+      .from('listings')
+      .update({ status: 'vendido', sold_to: buyerId, sold_at: new Date().toISOString() })
+      .eq('id', listing.id);
+    setIsMarkingSold(false);
+    if (!error) {
+      setIsSoldModalVisible(false);
+      load();
     }
   };
 
@@ -261,9 +317,18 @@ export default function ListingDetailScreen() {
 
       <View style={styles.footer}>
         {isOwner ? (
-          <RNView style={styles.ownerNotice}>
-            <Text style={styles.ownerNoticeText}>Es tu publicación</Text>
-          </RNView>
+          listing.status === 'vendido' ? (
+            <RNView style={styles.ownerNotice}>
+              <Text style={styles.ownerNoticeText}>
+                {soldToBuyer ? `Vendido a ${soldToBuyer.name ?? 'un comprador'}` : 'Vendido'}
+              </Text>
+            </RNView>
+          ) : (
+            <Pressable style={styles.soldButton} onPress={openSoldModal}>
+              <Ionicons name="checkmark-circle-outline" size={16} color={colors.paperElevated} />
+              <Text style={styles.messageButtonText}>Marcar como vendido</Text>
+            </Pressable>
+          )
         ) : session ? (
           <Pressable style={styles.messageButton} onPress={startConversation} disabled={isStartingChat}>
             {isStartingChat ? (
@@ -277,6 +342,42 @@ export default function ListingDetailScreen() {
           </Pressable>
         ) : null}
       </View>
+
+      <Modal
+        visible={isSoldModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsSoldModalVisible(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setIsSoldModalVisible(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>¿A quién le vendiste?</Text>
+            {isLoadingBuyers ? (
+              <ActivityIndicator color={colors.olive} style={styles.modalLoading} />
+            ) : buyers.length === 0 ? (
+              <Text style={styles.modalEmpty}>
+                Todavía nadie te escribió por este artículo. Necesitás al menos una conversación
+                para elegir el comprador.
+              </Text>
+            ) : (
+              buyers.map((buyer) => (
+                <Pressable
+                  key={buyer.id}
+                  style={styles.buyerRow}
+                  onPress={() => markAsSold(buyer.id)}
+                  disabled={isMarkingSold}>
+                  <RNView style={styles.sellerAvatar}>
+                    <Text style={styles.sellerAvatarText}>
+                      {(buyer.name ?? '?').charAt(0).toUpperCase()}
+                    </Text>
+                  </RNView>
+                  <Text style={styles.buyerName}>{buyer.name ?? 'Sin nombre'}</Text>
+                  {isMarkingSold ? <ActivityIndicator color={colors.olive} /> : null}
+                </Pressable>
+              ))
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -486,5 +587,52 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 13,
     color: colors.inkSoft,
+  },
+  soldButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.olive,
+    borderRadius: radii.sm,
+    paddingVertical: 13,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(33,31,26,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.paper,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  modalTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 17,
+    marginBottom: spacing.xs,
+  },
+  modalLoading: {
+    paddingVertical: spacing.lg,
+  },
+  modalEmpty: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.inkSoft,
+    lineHeight: 19,
+    paddingBottom: spacing.md,
+  },
+  buyerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  buyerName: {
+    flex: 1,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
   },
 });
