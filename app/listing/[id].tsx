@@ -12,6 +12,7 @@ import {
   ScrollView,
   Share,
   StyleSheet,
+  TextInput,
   View as RNView,
 } from 'react-native';
 
@@ -20,7 +21,7 @@ import { Text, View } from '@/components/Themed';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import type { Listing, Profile } from '@/types/database';
+import type { Listing, Profile, Rating } from '@/types/database';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -40,6 +41,10 @@ export default function ListingDetailScreen() {
   const [buyers, setBuyers] = useState<Profile[]>([]);
   const [isLoadingBuyers, setIsLoadingBuyers] = useState(false);
   const [isMarkingSold, setIsMarkingSold] = useState(false);
+  const [myRating, setMyRating] = useState<Rating | null>(null);
+  const [draftStars, setDraftStars] = useState(0);
+  const [draftComment, setDraftComment] = useState('');
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -89,6 +94,20 @@ export default function ListingDetailScreen() {
       setRating(null);
     }
     setIsFavorite(!!favoriteResult.data);
+
+    const isBuyerOfThisSale = session && listingData.sold_to === session.user.id;
+    if (isBuyerOfThisSale) {
+      const { data: myRatingData } = await supabase
+        .from('ratings')
+        .select('*')
+        .eq('seller_id', listingData.seller_id)
+        .eq('rater_id', session.user.id)
+        .maybeSingle();
+      setMyRating(myRatingData ?? null);
+    } else {
+      setMyRating(null);
+    }
+
     setIsLoading(false);
   }, [id, session]);
 
@@ -189,6 +208,23 @@ export default function ListingDetailScreen() {
     setIsMarkingSold(false);
     if (!error) {
       setIsSoldModalVisible(false);
+      load();
+    }
+  };
+
+  const submitRating = async () => {
+    if (!listing || !session || draftStars === 0) return;
+    setIsSubmittingRating(true);
+    const { error } = await supabase.from('ratings').insert({
+      seller_id: listing.seller_id,
+      rater_id: session.user.id,
+      stars: draftStars,
+      comment: draftComment.trim() || null,
+    });
+    setIsSubmittingRating(false);
+    if (!error) {
+      setDraftStars(0);
+      setDraftComment('');
       load();
     }
   };
@@ -304,6 +340,62 @@ export default function ListingDetailScreen() {
                 <Text style={styles.ratingText}>Sin calificaciones todavía</Text>
               )}
             </RNView>
+          </View>
+        ) : null}
+
+        {session && listing.status === 'vendido' && listing.sold_to === session.user.id ? (
+          <View style={styles.ratingCard}>
+            {myRating ? (
+              <>
+                <Text style={styles.label}>TU CALIFICACIÓN</Text>
+                <RNView style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Ionicons
+                      key={n}
+                      name={n <= myRating.stars ? 'star' : 'star-outline'}
+                      size={18}
+                      color={colors.mustard}
+                    />
+                  ))}
+                </RNView>
+                {myRating.comment ? (
+                  <Text style={styles.descriptionText}>{myRating.comment}</Text>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Text style={styles.label}>CALIFICÁ A ESTE VENDEDOR</Text>
+                <RNView style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable key={n} onPress={() => setDraftStars(n)} hitSlop={6}>
+                      <Ionicons
+                        name={n <= draftStars ? 'star' : 'star-outline'}
+                        size={26}
+                        color={colors.mustard}
+                      />
+                    </Pressable>
+                  ))}
+                </RNView>
+                <TextInput
+                  style={styles.ratingInput}
+                  placeholder="Contá cómo fue la compra (opcional)"
+                  placeholderTextColor={colors.inkSoft}
+                  value={draftComment}
+                  onChangeText={setDraftComment}
+                  multiline
+                />
+                <Pressable
+                  style={[styles.ratingSubmit, draftStars === 0 && styles.ratingSubmitDisabled]}
+                  onPress={submitRating}
+                  disabled={draftStars === 0 || isSubmittingRating}>
+                  {isSubmittingRating ? (
+                    <ActivityIndicator color={colors.paperElevated} />
+                  ) : (
+                    <Text style={styles.messageButtonText}>Enviar calificación</Text>
+                  )}
+                </Pressable>
+              </>
+            )}
           </View>
         ) : null}
 
@@ -543,6 +635,42 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 11,
     color: colors.inkSoft,
+  },
+  ratingCard: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paperElevated,
+    gap: spacing.sm,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  ratingInput: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.ink,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  ratingSubmit: {
+    alignItems: 'center',
+    backgroundColor: colors.olive,
+    borderRadius: radii.sm,
+    paddingVertical: 12,
+  },
+  ratingSubmitDisabled: {
+    opacity: 0.5,
   },
   description: {
     paddingHorizontal: spacing.md,
