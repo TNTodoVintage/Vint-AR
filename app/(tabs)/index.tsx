@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
 
 import { ListingCard } from '@/components/ListingCard';
@@ -57,10 +58,17 @@ export default function FeedScreen() {
     }
   }, [session]);
 
-  useEffect(() => {
-    setIsLoading(true);
-    load().finally(() => setIsLoading(false));
-  }, [load]);
+  const hasLoadedOnce = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasLoadedOnce.current) setIsLoading(true);
+      load().finally(() => {
+        hasLoadedOnce.current = true;
+        setIsLoading(false);
+      });
+    }, [load])
+  );
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);

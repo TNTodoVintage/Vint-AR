@@ -33,6 +33,12 @@
           "resizeMode": "contain",
           "backgroundColor": "#EDE6D6"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Vint AR necesita acceso a tus fotos para publicar artículos."
+        }
       ]
     ],
     "experiments": {
