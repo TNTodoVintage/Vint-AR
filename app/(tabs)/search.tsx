@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View as RNView } from 'react-native';
 
 import { ListingCard } from '@/components/ListingCard';
+import { LocationPicker } from '@/components/LocationPicker';
 import { Text, View } from '@/components/Themed';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth-context';
@@ -30,6 +31,7 @@ export default function SearchScreen() {
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
   const [city, setCity] = useState('');
+  const [isLocationPickerVisible, setIsLocationPickerVisible] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>('reciente');
   const [results, setResults] = useState<ResultListing[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -157,13 +159,20 @@ export default function SearchScreen() {
             value={maxPrice}
             onChangeText={setMaxPrice}
           />
-          <TextInput
-            style={[styles.filterInput, styles.flex1]}
-            placeholder="Ciudad"
-            placeholderTextColor={colors.inkSoft}
-            value={city}
-            onChangeText={setCity}
-          />
+          <Pressable
+            style={[styles.filterInput, styles.flex1, styles.cityButton]}
+            onPress={() => setIsLocationPickerVisible(true)}>
+            <Text
+              style={city ? styles.cityButtonText : styles.cityButtonPlaceholder}
+              numberOfLines={1}>
+              {city || 'Ciudad'}
+            </Text>
+            {city ? (
+              <Pressable onPress={() => setCity('')} hitSlop={8}>
+                <Ionicons name="close-circle" size={15} color={colors.inkSoft} />
+              </Pressable>
+            ) : null}
+          </Pressable>
         </RNView>
 
         <RNView style={styles.sortRow}>
@@ -204,6 +213,12 @@ export default function SearchScreen() {
           )}
         />
       )}
+
+      <LocationPicker
+        visible={isLocationPickerVisible}
+        onClose={() => setIsLocationPickerVisible(false)}
+        onSelect={setCity}
+      />
     </View>
   );
 }
@@ -255,6 +270,24 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 9,
+  },
+  cityButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+  },
+  cityButtonText: {
+    flexShrink: 1,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  cityButtonPlaceholder: {
+    flexShrink: 1,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.inkSoft,
   },
   sortRow: {
     flexDirection: 'row',

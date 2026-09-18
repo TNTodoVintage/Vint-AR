@@ -12,6 +12,7 @@ import {
   View as RNView,
 } from 'react-native';
 
+import { LocationPicker } from '@/components/LocationPicker';
 import { Text, View } from '@/components/Themed';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth-context';
@@ -41,6 +42,7 @@ export default function NewListingScreen() {
   const [condition, setCondition] = useState<Condition | null>(null);
   const [size, setSize] = useState('');
   const [location, setLocation] = useState('');
+  const [isLocationPickerVisible, setIsLocationPickerVisible] = useState(false);
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -249,13 +251,12 @@ export default function NewListingScreen() {
 
         <View style={styles.field}>
           <Text style={styles.label}>UBICACIÓN</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ej: Palermo, CABA"
-            placeholderTextColor={colors.inkSoft}
-            value={location}
-            onChangeText={setLocation}
-          />
+          <Pressable style={styles.locationButton} onPress={() => setIsLocationPickerVisible(true)}>
+            <Ionicons name="location-outline" size={16} color={colors.inkSoft} />
+            <Text style={location ? styles.locationValue : styles.locationPlaceholder}>
+              {location || 'Elegir ubicación'}
+            </Text>
+          </Pressable>
         </View>
 
         <View style={styles.field}>
@@ -272,6 +273,12 @@ export default function NewListingScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </ScrollView>
+
+      <LocationPicker
+        visible={isLocationPickerVisible}
+        onClose={() => setIsLocationPickerVisible(false)}
+        onSelect={setLocation}
+      />
     </View>
   );
 }
@@ -331,6 +338,27 @@ const styles = StyleSheet.create({
   textarea: {
     minHeight: 80,
     textAlignVertical: 'top',
+  },
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.paperElevated,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 11,
+  },
+  locationValue: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.ink,
+  },
+  locationPlaceholder: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.inkSoft,
   },
   photoRow: {
     flexDirection: 'row',
