@@ -3,12 +3,12 @@ import { StyleSheet } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { colors, fonts, spacing } from '@/constants/theme';
 
-export default function FeedScreen() {
+export default function SearchScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Vint AR</Text>
+      <Text style={styles.title}>Buscar</Text>
       <Text style={styles.subtitle}>
-        Acá va el feed: grilla de 2 columnas, chips de categoría y orden por reciente/precio.
+        Buscador por título y vendedor, con filtros de precio y ciudad.
       </Text>
     </View>
   );
@@ -21,7 +21,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: fonts.display,
-    fontSize: 28,
+    fontSize: 24,
     marginBottom: spacing.sm,
   },
   subtitle: {
