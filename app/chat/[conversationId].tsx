@@ -32,6 +32,7 @@ export default function ChatScreen() {
 
   const [header, setHeader] = useState<ConversationHeader | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -41,7 +42,7 @@ export default function ChatScreen() {
 
     const { data: conversation } = await supabase
       .from('conversations')
-      .select('listing_id, buyer_id, seller_id')
+      .select('listing_id, buyer_id, seller_id, buyer_last_read_at, seller_last_read_at')
       .eq('id', conversationId)
       .single();
 
@@ -62,15 +63,20 @@ export default function ChatScreen() {
         });
       }
 
+      setOtherLastReadAt(
+        isBuyer ? conversation.seller_last_read_at : conversation.buyer_last_read_at
+      );
+
+      const now = new Date().toISOString();
       if (isBuyer) {
         await supabase
           .from('conversations')
-          .update({ buyer_unread: false })
+          .update({ buyer_unread: false, buyer_last_read_at: now })
           .eq('id', conversationId);
       } else {
         await supabase
           .from('conversations')
-          .update({ seller_unread: false })
+          .update({ seller_unread: false, seller_last_read_at: now })
           .eq('id', conversationId);
       }
     }
@@ -143,10 +149,19 @@ export default function ChatScreen() {
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
         renderItem={({ item }) => {
           const mine = item.from_id === session?.user.id;
+          const isRead = mine && !!otherLastReadAt && item.created_at <= otherLastReadAt;
           return (
             <RNView style={[styles.messageRow, mine && styles.messageRowMine]}>
               <RNView style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
                 <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{item.text}</Text>
+                {mine ? (
+                  <Ionicons
+                    name={isRead ? 'checkmark-done' : 'checkmark'}
+                    size={14}
+                    color={isRead ? colors.mustard : 'rgba(247,243,233,0.7)'}
+                    style={styles.readReceipt}
+                  />
+                ) : null}
               </RNView>
             </RNView>
           );
@@ -212,6 +227,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   bubble: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 4,
     maxWidth: '76%',
     borderRadius: radii.md,
     paddingHorizontal: 13,
@@ -224,6 +242,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.olive,
   },
   bubbleText: {
+    flexShrink: 1,
     fontFamily: fonts.body,
     fontSize: 13.5,
     lineHeight: 18,
@@ -231,6 +250,9 @@ const styles = StyleSheet.create({
   },
   bubbleTextMine: {
     color: colors.paperElevated,
+  },
+  readReceipt: {
+    marginBottom: 2,
   },
   inputBar: {
     flexDirection: 'row',
