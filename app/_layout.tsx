@@ -1,4 +1,4 @@
-import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DefaultTheme, Stack, ThemeProvider, router, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
@@ -10,6 +10,7 @@ import {
 } from '@expo-google-fonts/work-sans';
 
 import { colors } from '@/constants/theme';
+import { AuthProvider, useAuth } from '@/lib/auth-context';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -17,7 +18,7 @@ export {
 } from 'expo-router';
 
 export const unstable_settings = {
-  initialRouteName: '(tabs)',
+  initialRouteName: '(auth)',
 };
 
 const vintArTheme = {
@@ -61,15 +62,41 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={vintArTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="listing/new"
-          options={{ presentation: 'modal', title: 'Publicar artículo' }}
-        />
-        <Stack.Screen name="listing/[id]" options={{ title: '' }} />
-        <Stack.Screen name="chat/[conversationId]" options={{ title: 'Chat' }} />
-      </Stack>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
     </ThemeProvider>
+  );
+}
+
+function AuthGate() {
+  const { session, isLoading } = useAuth();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (isLoading) return;
+    const inAuthGroup = segments[0] === '(auth)';
+    if (!session && !inAuthGroup) {
+      router.replace('/(auth)/sign-in');
+    } else if (session && inAuthGroup) {
+      router.replace('/(tabs)');
+    }
+  }, [session, isLoading, segments]);
+
+  if (isLoading) {
+    return null;
+  }
+
+  return (
+    <Stack>
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="listing/new"
+        options={{ presentation: 'modal', title: 'Publicar artículo' }}
+      />
+      <Stack.Screen name="listing/[id]" options={{ title: '' }} />
+      <Stack.Screen name="chat/[conversationId]" options={{ title: 'Chat' }} />
+    </Stack>
   );
 }

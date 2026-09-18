@@ -13,11 +13,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+// Guards the web static export (pre-rendered in Node, no `window`) from
+// crashing on Supabase's session storage lookup, which runs at import time.
+const isBrowserOrNative = typeof window !== 'undefined';
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
+    storage: isBrowserOrNative ? AsyncStorage : undefined,
+    autoRefreshToken: isBrowserOrNative,
+    persistSession: isBrowserOrNative,
     detectSessionInUrl: false,
   },
 });
