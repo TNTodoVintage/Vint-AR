@@ -28,8 +28,8 @@ export default function SignUpScreen() {
       setError('Completá nombre, email y contraseña.');
       return;
     }
-    if (password.length < 6) {
-      setError('La contraseña tiene que tener al menos 6 caracteres.');
+    if (password.length < 8) {
+      setError('La contraseña tiene que tener al menos 8 caracteres.');
       return;
     }
     setError(null);
@@ -86,7 +86,7 @@ export default function SignUpScreen() {
           <Text style={styles.label}>Contraseña</Text>
           <TextInput
             style={styles.input}
-            placeholder="Mínimo 6 caracteres"
+            placeholder="Mínimo 8 caracteres"
             placeholderTextColor={colors.inkSoft}
             secureTextEntry
             autoComplete="password-new"

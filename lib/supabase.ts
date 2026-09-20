@@ -1,7 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
 
+import { LargeSecureStore } from '@/lib/secure-store-adapter';
 import type { Database } from '@/types/database';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -17,9 +18,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // crashing on Supabase's session storage lookup, which runs at import time.
 const isBrowserOrNative = typeof window !== 'undefined';
 
+// Native: session tokens are encrypted at rest via the OS keychain/keystore
+// (see secure-store-adapter.ts), not plain AsyncStorage. Web: no SecureStore
+// API exists, so fall back to Supabase's own default (localStorage) by
+// omitting `storage` — only guarded against the SSR/export case above.
+const storage =
+  Platform.OS === 'web' ? undefined : isBrowserOrNative ? new LargeSecureStore() : undefined;
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: isBrowserOrNative ? AsyncStorage : undefined,
+    storage,
     autoRefreshToken: isBrowserOrNative,
     persistSession: isBrowserOrNative,
     detectSessionInUrl: false,

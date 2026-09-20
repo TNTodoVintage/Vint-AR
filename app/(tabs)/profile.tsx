@@ -1,7 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, View as RNView } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  View as RNView,
+} from 'react-native';
 
 import { ListingCard } from '@/components/ListingCard';
 import { Text, View } from '@/components/Themed';
@@ -22,6 +29,7 @@ export default function ProfileScreen() {
   const [rating, setRating] = useState<{ avg: number; count: number } | null>(null);
   const [activeTab, setActiveTab] = useState<'activas' | 'vendidas'>('activas');
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -54,6 +62,30 @@ export default function ProfileScreen() {
       load();
     }, [load])
   );
+
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      'Eliminar cuenta',
+      'Esto borra tu cuenta, tus publicaciones, mensajes y calificaciones para siempre. No se puede deshacer. ¿Querés continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar mi cuenta',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            const { error } = await supabase.rpc('delete_own_account');
+            if (error) {
+              setIsDeleting(false);
+              Alert.alert('No pudimos eliminar tu cuenta', error.message);
+              return;
+            }
+            await signOut();
+          },
+        },
+      ]
+    );
+  };
 
   if (isLoading) {
     return (
@@ -139,9 +171,21 @@ export default function ProfileScreen() {
       }
       renderItem={({ item }) => <ListingCard listing={item} />}
       ListFooterComponent={
-        <Pressable style={styles.signOutButton} onPress={signOut}>
-          <Text style={styles.signOutText}>Cerrar sesión</Text>
-        </Pressable>
+        <>
+          <Pressable style={styles.signOutButton} onPress={signOut}>
+            <Text style={styles.signOutText}>Cerrar sesión</Text>
+          </Pressable>
+          <Pressable
+            style={styles.deleteAccountButton}
+            onPress={confirmDeleteAccount}
+            disabled={isDeleting}>
+            {isDeleting ? (
+              <ActivityIndicator color={colors.inkSoft} />
+            ) : (
+              <Text style={styles.deleteAccountText}>Eliminar cuenta</Text>
+            )}
+          </Pressable>
+        </>
       }
     />
   );
@@ -280,5 +324,18 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 14,
     color: colors.brick,
+  },
+  deleteAccountButton: {
+    marginTop: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  deleteAccountText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.inkSoft,
+    textDecorationLine: 'underline',
   },
 });
