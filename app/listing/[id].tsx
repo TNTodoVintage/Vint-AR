@@ -5,6 +5,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Modal,
   NativeScrollEvent,
@@ -36,6 +37,7 @@ export default function ListingDetailScreen() {
   const [soldToBuyer, setSoldToBuyer] = useState<Profile | null>(null);
   const [rating, setRating] = useState<{ avg: number; count: number } | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isStartingChat, setIsStartingChat] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -68,20 +70,30 @@ export default function ListingDetailScreen() {
     }
     setListing(listingData);
 
-    const [{ data: sellerData }, { data: ratingsData }, favoriteResult] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', listingData.seller_id).single(),
-      supabase.from('ratings').select('stars').eq('seller_id', listingData.seller_id),
-      session
-        ? supabase
-            .from('favorites')
-            .select('listing_id')
-            .eq('listing_id', id)
-            .eq('user_id', session.user.id)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
+    const [{ data: sellerData }, { data: ratingsData }, favoriteResult, blockResult] =
+      await Promise.all([
+        supabase.from('profiles').select('*').eq('id', listingData.seller_id).single(),
+        supabase.from('ratings').select('stars').eq('seller_id', listingData.seller_id),
+        session
+          ? supabase
+              .from('favorites')
+              .select('listing_id')
+              .eq('listing_id', id)
+              .eq('user_id', session.user.id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+        session
+          ? supabase
+              .from('blocks')
+              .select('blocked_id')
+              .eq('blocker_id', session.user.id)
+              .eq('blocked_id', listingData.seller_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
 
     setSeller(sellerData ?? null);
+    setIsBlocked(!!blockResult.data);
 
     if (listingData.sold_to) {
       const { data: buyerData } = await supabase
@@ -139,6 +151,44 @@ export default function ListingDetailScreen() {
         .eq('listing_id', listing.id)
         .eq('user_id', session.user.id);
     }
+  };
+
+  const toggleBlock = () => {
+    if (!session || !seller) return;
+    if (isBlocked) {
+      Alert.alert('Desbloquear', `¿Desbloquear a ${seller.name ?? 'este vendedor'}?`, [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desbloquear',
+          onPress: async () => {
+            setIsBlocked(false);
+            await supabase
+              .from('blocks')
+              .delete()
+              .eq('blocker_id', session.user.id)
+              .eq('blocked_id', seller.id);
+          },
+        },
+      ]);
+      return;
+    }
+    Alert.alert(
+      'Bloquear vendedor',
+      `No vas a poder mandarle ni recibir mensajes de ${seller.name ?? 'este vendedor'}.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Bloquear',
+          style: 'destructive',
+          onPress: async () => {
+            setIsBlocked(true);
+            await supabase
+              .from('blocks')
+              .insert({ blocker_id: session.user.id, blocked_id: seller.id });
+          },
+        },
+      ]
+    );
   };
 
   const onShare = () => {
@@ -359,17 +409,26 @@ export default function ListingDetailScreen() {
               )}
             </RNView>
             {session && !isOwner ? (
-              <Pressable
-                onPress={() =>
-                  setReportTarget({
-                    type: 'user',
-                    id: seller.id,
-                    label: seller.name ?? 'Sin nombre',
-                  })
-                }
-                hitSlop={8}>
-                <Ionicons name="flag-outline" size={16} color={colors.inkSoft} />
-              </Pressable>
+              <RNView style={styles.sellerActions}>
+                <Pressable onPress={toggleBlock} hitSlop={8}>
+                  <Ionicons
+                    name={isBlocked ? 'person-remove' : 'person-remove-outline'}
+                    size={16}
+                    color={isBlocked ? colors.brick : colors.inkSoft}
+                  />
+                </Pressable>
+                <Pressable
+                  onPress={() =>
+                    setReportTarget({
+                      type: 'user',
+                      id: seller.id,
+                      label: seller.name ?? 'Sin nombre',
+                    })
+                  }
+                  hitSlop={8}>
+                  <Ionicons name="flag-outline" size={16} color={colors.inkSoft} />
+                </Pressable>
+              </RNView>
             ) : null}
           </View>
         ) : null}
@@ -452,6 +511,10 @@ export default function ListingDetailScreen() {
               <Text style={styles.messageButtonText}>Marcar como vendido</Text>
             </Pressable>
           )
+        ) : session && isBlocked ? (
+          <RNView style={styles.ownerNotice}>
+            <Text style={styles.ownerNoticeText}>Bloqueaste a este vendedor</Text>
+          </RNView>
         ) : session ? (
           <Pressable style={styles.messageButton} onPress={startConversation} disabled={isStartingChat}>
             {isStartingChat ? (
@@ -662,6 +725,10 @@ const styles = StyleSheet.create({
   sellerInfo: {
     flex: 1,
     gap: 2,
+  },
+  sellerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   sellerName: {
     fontFamily: fonts.bodySemiBold,

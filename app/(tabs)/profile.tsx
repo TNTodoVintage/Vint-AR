@@ -26,6 +26,7 @@ export default function ProfileScreen() {
   const { session, signOut } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [listings, setListings] = useState<OwnListing[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<Profile[]>([]);
   const [rating, setRating] = useState<{ avg: number; count: number } | null>(null);
   const [activeTab, setActiveTab] = useState<'activas' | 'vendidas'>('activas');
   const [isLoading, setIsLoading] = useState(true);
@@ -35,7 +36,7 @@ export default function ProfileScreen() {
     if (!session) return;
     const userId = session.user.id;
 
-    const [{ data: profileData }, { data: listingsData }, { data: ratingsData }] =
+    const [{ data: profileData }, { data: listingsData }, { data: ratingsData }, { data: blocksData }] =
       await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).single(),
         supabase
@@ -44,6 +45,7 @@ export default function ProfileScreen() {
           .eq('seller_id', userId)
           .order('created_at', { ascending: false }),
         supabase.from('ratings').select('stars').eq('seller_id', userId),
+        supabase.from('blocks').select('blocked_id').eq('blocker_id', userId),
       ]);
 
     setProfile(profileData ?? null);
@@ -54,8 +56,30 @@ export default function ProfileScreen() {
     } else {
       setRating(null);
     }
+
+    const blockedIds = (blocksData ?? []).map((b) => b.blocked_id);
+    if (blockedIds.length > 0) {
+      const { data: blockedProfiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', blockedIds);
+      setBlockedUsers(blockedProfiles ?? []);
+    } else {
+      setBlockedUsers([]);
+    }
+
     setIsLoading(false);
   }, [session]);
+
+  const unblockUser = async (userId: string) => {
+    if (!session) return;
+    setBlockedUsers((prev) => prev.filter((u) => u.id !== userId));
+    await supabase
+      .from('blocks')
+      .delete()
+      .eq('blocker_id', session.user.id)
+      .eq('blocked_id', userId);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -172,6 +196,19 @@ export default function ProfileScreen() {
       renderItem={({ item }) => <ListingCard listing={item} />}
       ListFooterComponent={
         <>
+          {blockedUsers.length > 0 ? (
+            <View style={styles.blockedSection}>
+              <Text style={styles.label}>USUARIOS BLOQUEADOS</Text>
+              {blockedUsers.map((user) => (
+                <RNView key={user.id} style={styles.blockedRow}>
+                  <Text style={styles.blockedName}>{user.name ?? 'Sin nombre'}</Text>
+                  <Pressable onPress={() => unblockUser(user.id)}>
+                    <Text style={styles.unblockText}>Desbloquear</Text>
+                  </Pressable>
+                </RNView>
+              ))}
+            </View>
+          ) : null}
           <Pressable style={styles.signOutButton} onPress={signOut}>
             <Text style={styles.signOutText}>Cerrar sesión</Text>
           </Pressable>
@@ -309,6 +346,37 @@ const styles = StyleSheet.create({
   },
   row: {
     gap: spacing.sm,
+  },
+  blockedSection: {
+    marginTop: spacing.lg,
+    marginHorizontal: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paperElevated,
+    gap: spacing.xs,
+  },
+  label: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: colors.inkSoft,
+    marginBottom: spacing.xs,
+  },
+  blockedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  blockedName: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+  },
+  unblockText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    color: colors.olive,
   },
   signOutButton: {
     marginTop: spacing.lg,

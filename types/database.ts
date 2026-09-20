@@ -64,6 +64,18 @@ export type FavoriteInsert = {
   created_at?: string;
 }
 
+export type Block = {
+  blocker_id: string;
+  blocked_id: string;
+  created_at: string;
+}
+
+export type BlockInsert = {
+  blocker_id: string;
+  blocked_id: string;
+  created_at?: string;
+}
+
 export type Conversation = {
   id: string;
   listing_id: string;
@@ -172,6 +184,12 @@ export type Database = {
         Row: Favorite;
         Insert: FavoriteInsert;
         Update: Partial<Favorite>;
+        Relationships: [];
+      };
+      blocks: {
+        Row: Block;
+        Insert: BlockInsert;
+        Update: Partial<Block>;
         Relationships: [];
       };
       conversations: {

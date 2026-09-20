@@ -48,6 +48,14 @@ create table if not exists favorites (
   primary key (listing_id, user_id)
 );
 
+create table if not exists blocks (
+  blocker_id uuid not null references profiles(id) on delete cascade,
+  blocked_id uuid not null references profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_id),
+  check (blocker_id <> blocked_id)
+);
+
 create table if not exists conversations (
   id uuid primary key default gen_random_uuid(),
   listing_id uuid not null references listings(id) on delete cascade,
@@ -138,12 +146,35 @@ create trigger on_message_created
   for each row execute procedure public.handle_new_message();
 
 -- ---------------------------------------------------------------------------
+-- is_blocked: ¿hay un bloqueo entre estos dos usuarios, en cualquier
+-- sentido? security definer para poder chequearlo desde otras políticas
+-- (conversations/messages) sin depender de que el que pregunta tenga
+-- permiso de LEER la tabla blocks directamente — si no, alguien no podría
+-- detectar que la OTRA persona lo bloqueó a él, porque su propia política
+-- de "blocks" solo le deja ver los bloqueos que él mismo creó.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.is_blocked(user_a uuid, user_b uuid)
+returns boolean
+language sql
+security definer set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from blocks
+    where (blocker_id = user_a and blocked_id = user_b)
+       or (blocker_id = user_b and blocked_id = user_a)
+  );
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security
 -- ---------------------------------------------------------------------------
 
 alter table profiles enable row level security;
 alter table listings enable row level security;
 alter table favorites enable row level security;
+alter table blocks enable row level security;
 alter table conversations enable row level security;
 alter table messages enable row level security;
 alter table ratings enable row level security;
@@ -201,6 +232,17 @@ create policy "users can add own favorites"
 create policy "users can remove own favorites"
   on favorites for delete using (auth.uid() = user_id);
 
+-- blocks: cada usuario solo ve y administra los bloqueos que hizo él mismo
+-- (no se puede ver quién lo bloqueó a uno, ni bloquear en nombre de otro).
+create policy "users can view own blocks"
+  on blocks for select using (auth.uid() = blocker_id);
+
+create policy "users can create own blocks"
+  on blocks for insert with check (auth.uid() = blocker_id);
+
+create policy "users can remove own blocks"
+  on blocks for delete using (auth.uid() = blocker_id);
+
 -- conversations: solo comprador y vendedor de esa conversación la ven.
 -- Esto es lo que el prototipo no podía garantizar y acá se resuelve en la
 -- base de datos, no en el cliente.
@@ -210,7 +252,7 @@ create policy "participants can view conversation"
 
 create policy "buyers can start a conversation"
   on conversations for insert
-  with check (auth.uid() = buyer_id);
+  with check (auth.uid() = buyer_id and not public.is_blocked(buyer_id, seller_id));
 
 create policy "participants can update conversation"
   on conversations for update
@@ -235,6 +277,7 @@ create policy "participants can send messages"
       select 1 from conversations c
       where c.id = messages.conversation_id
         and (auth.uid() = c.buyer_id or auth.uid() = c.seller_id)
+        and not public.is_blocked(c.buyer_id, c.seller_id)
     )
   );
 
