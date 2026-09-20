@@ -122,6 +122,31 @@ export type RatingInsert = {
   created_at?: string;
 }
 
+export type ReportTargetType = 'listing' | 'user';
+export type ReportStatus = 'pendiente' | 'revisado';
+
+export type Report = {
+  id: string;
+  reporter_id: string;
+  target_type: ReportTargetType;
+  target_id: string;
+  reason: string;
+  comment: string | null;
+  status: ReportStatus;
+  created_at: string;
+}
+
+export type ReportInsert = {
+  id?: string;
+  reporter_id: string;
+  target_type: ReportTargetType;
+  target_id: string;
+  reason: string;
+  comment?: string | null;
+  status?: ReportStatus;
+  created_at?: string;
+}
+
 // Database shape for @supabase/supabase-js's typed client. Shaped like the
 // output of `supabase gen types typescript` (each table needs Relationships,
 // each schema needs Views/Functions) so the postgrest-js generics resolve.
@@ -165,6 +190,12 @@ export type Database = {
         Row: Rating;
         Insert: RatingInsert;
         Update: Partial<Rating>;
+        Relationships: [];
+      };
+      reports: {
+        Row: Report;
+        Insert: ReportInsert;
+        Update: Partial<Report>;
         Relationships: [];
       };
     };

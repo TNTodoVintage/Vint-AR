@@ -256,3 +256,43 @@ create policy "owners can update their listing photos"
 create policy "owners can delete their listing photos"
   on storage.objects for delete to authenticated
   using (bucket_id = 'listing-photos' and owner = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- reports: reportar publicaciones o vendedores (moderación)
+-- ---------------------------------------------------------------------------
+
+create table if not exists reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter_id uuid not null references profiles(id) on delete cascade,
+  target_type text not null check (target_type in ('listing', 'user')),
+  target_id uuid not null,
+  reason text not null,
+  comment text,
+  status text not null default 'pendiente' check (status in ('pendiente', 'revisado')),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists reports_target_idx on reports(target_type, target_id);
+
+alter table reports enable row level security;
+
+-- cualquier usuario logueado puede crear un reporte a nombre propio.
+create policy "users can create reports"
+  on reports for insert
+  with check (auth.uid() = reporter_id);
+
+-- cada usuario puede ver únicamente los reportes que hizo (no los ajenos).
+-- La revisión de reportes por un moderador se hace directo en Supabase con
+-- la service_role key, que no está sujeta a RLS.
+create policy "reporters can view their own reports"
+  on reports for select
+  using (auth.uid() = reporter_id);
+
+-- ---------------------------------------------------------------------------
+-- Permisos base (por debajo de RLS). Sin esto, aunque las políticas de
+-- arriba sean correctas, Postgres igual devuelve "permission denied".
+-- ---------------------------------------------------------------------------
+
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant select on all tables in schema public to anon;

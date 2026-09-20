@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 
 import { formatPrice } from '@/components/ListingCard';
+import { ReportModal } from '@/components/ReportModal';
 import { Text, View } from '@/components/Themed';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth-context';
@@ -38,6 +39,11 @@ export default function ListingDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isStartingChat, setIsStartingChat] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [reportTarget, setReportTarget] = useState<{
+    type: 'listing' | 'user';
+    id: string;
+    label: string;
+  } | null>(null);
   const [isSoldModalVisible, setIsSoldModalVisible] = useState(false);
   const [buyers, setBuyers] = useState<Profile[]>([]);
   const [isLoadingBuyers, setIsLoadingBuyers] = useState(false);
@@ -304,6 +310,15 @@ export default function ListingDetailScreen() {
             <Pressable style={styles.iconButton} onPress={onShare}>
               <Ionicons name="share-outline" size={17} color={colors.ink} />
             </Pressable>
+            {session && !isOwner ? (
+              <Pressable
+                style={styles.iconButton}
+                onPress={() =>
+                  setReportTarget({ type: 'listing', id: listing.id, label: listing.title })
+                }>
+                <Ionicons name="flag-outline" size={17} color={colors.ink} />
+              </Pressable>
+            ) : null}
           </RNView>
 
           {listing.status === 'vendido' ? (
@@ -343,6 +358,19 @@ export default function ListingDetailScreen() {
                 <Text style={styles.ratingText}>Sin calificaciones todavía</Text>
               )}
             </RNView>
+            {session && !isOwner ? (
+              <Pressable
+                onPress={() =>
+                  setReportTarget({
+                    type: 'user',
+                    id: seller.id,
+                    label: seller.name ?? 'Sin nombre',
+                  })
+                }
+                hitSlop={8}>
+                <Ionicons name="flag-outline" size={16} color={colors.inkSoft} />
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -473,6 +501,16 @@ export default function ListingDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {reportTarget ? (
+        <ReportModal
+          visible={!!reportTarget}
+          onClose={() => setReportTarget(null)}
+          targetType={reportTarget.type}
+          targetId={reportTarget.id}
+          targetLabel={reportTarget.label}
+        />
+      ) : null}
     </View>
   );
 }
