@@ -24,7 +24,7 @@ import { Text, View } from '@/components/Themed';
 import { colors, fonts, radii, spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import type { Listing, Profile, Rating } from '@/types/database';
+import type { Listing, Order, Profile, Rating } from '@/types/database';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -54,6 +54,9 @@ export default function ListingDetailScreen() {
   const [draftStars, setDraftStars] = useState(0);
   const [draftComment, setDraftComment] = useState('');
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [order, setOrder] = useState<Order | null>(null);
+  const [isBuyingWithMp, setIsBuyingWithMp] = useState(false);
+  const [isConfirmingReceipt, setIsConfirmingReceipt] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -94,6 +97,19 @@ export default function ListingDetailScreen() {
 
     setSeller(sellerData ?? null);
     setIsBlocked(!!blockResult.data);
+
+    if (session) {
+      const { data: orderData } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('listing_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setOrder(orderData ?? null);
+    } else {
+      setOrder(null);
+    }
 
     if (listingData.sold_to) {
       const { data: buyerData } = await supabase
@@ -230,6 +246,45 @@ export default function ListingDetailScreen() {
       router.push({ pathname: '/chat/[conversationId]', params: { conversationId: created.id } });
     } finally {
       setIsStartingChat(false);
+    }
+  };
+
+  const buyWithMercadoPago = async () => {
+    if (!session || !listing) return;
+    setIsBuyingWithMp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-payment-preference', {
+        body: { listing_id: listing.id },
+      });
+      if (error || !data?.checkout_url) {
+        Alert.alert(
+          'No se pudo iniciar el pago',
+          data?.error ?? 'Intentá de nuevo en unos minutos.'
+        );
+        return;
+      }
+      await Linking.openURL(data.checkout_url);
+    } catch {
+      Alert.alert('No se pudo iniciar el pago', 'Intentá de nuevo en unos minutos.');
+    } finally {
+      setIsBuyingWithMp(false);
+    }
+  };
+
+  const confirmReceipt = async () => {
+    if (!session || !order) return;
+    setIsConfirmingReceipt(true);
+    try {
+      const { error } = await supabase.rpc('confirm_order_received', {
+        target_order_id: order.id,
+      });
+      if (error) {
+        Alert.alert('No se pudo confirmar', error.message);
+        return;
+      }
+      load();
+    } finally {
+      setIsConfirmingReceipt(false);
     }
   };
 
@@ -504,6 +559,17 @@ export default function ListingDetailScreen() {
               <Text style={styles.ownerNoticeText}>
                 {soldToBuyer ? `Vendido a ${soldToBuyer.name ?? 'un comprador'}` : 'Vendido'}
               </Text>
+              {order && order.status === 'paid' ? (
+                <Text style={styles.orderSubText}>
+                  Pago recibido. Esperando que confirme que le llegó.
+                </Text>
+              ) : order && order.status === 'confirmed' ? (
+                <Text style={styles.orderSubText}>
+                  Confirmó que le llegó. Ya podés transferirle el dinero.
+                </Text>
+              ) : order && order.status === 'released' ? (
+                <Text style={styles.orderSubText}>Pago liberado.</Text>
+              ) : null}
             </RNView>
           ) : (
             <Pressable style={styles.soldButton} onPress={openSoldModal}>
@@ -516,16 +582,61 @@ export default function ListingDetailScreen() {
             <Text style={styles.ownerNoticeText}>Bloqueaste a este vendedor</Text>
           </RNView>
         ) : session ? (
-          <Pressable style={styles.messageButton} onPress={startConversation} disabled={isStartingChat}>
-            {isStartingChat ? (
-              <ActivityIndicator color={colors.paperElevated} />
-            ) : (
-              <>
-                <Ionicons name="chatbubble-outline" size={16} color={colors.paperElevated} />
-                <Text style={styles.messageButtonText}>Enviar mensaje</Text>
-              </>
-            )}
-          </Pressable>
+          <RNView style={styles.footerStack}>
+            {order && order.status === 'paid' ? (
+              <RNView style={styles.orderNotice}>
+                <Text style={styles.orderNoticeText}>Ya pagaste este artículo.</Text>
+                <Pressable
+                  style={styles.confirmButton}
+                  onPress={confirmReceipt}
+                  disabled={isConfirmingReceipt}>
+                  {isConfirmingReceipt ? (
+                    <ActivityIndicator color={colors.paperElevated} />
+                  ) : (
+                    <Text style={styles.messageButtonText}>Confirmé que llegó</Text>
+                  )}
+                </Pressable>
+              </RNView>
+            ) : order && (order.status === 'confirmed' || order.status === 'released') ? (
+              <RNView style={styles.ownerNotice}>
+                <Text style={styles.ownerNoticeText}>Confirmaste la recepción. ¡Gracias!</Text>
+              </RNView>
+            ) : order && order.status === 'pending' ? (
+              <RNView style={styles.ownerNotice}>
+                <Text style={styles.ownerNoticeText}>
+                  Tenés un pago en proceso para este artículo.
+                </Text>
+              </RNView>
+            ) : listing.status === 'activo' ? (
+              <Pressable
+                style={styles.mpButton}
+                onPress={buyWithMercadoPago}
+                disabled={isBuyingWithMp}>
+                {isBuyingWithMp ? (
+                  <ActivityIndicator color={colors.paperElevated} />
+                ) : (
+                  <>
+                    <Ionicons name="card-outline" size={16} color={colors.paperElevated} />
+                    <Text style={styles.messageButtonText}>Comprar con Mercado Pago</Text>
+                  </>
+                )}
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              style={styles.messageButton}
+              onPress={startConversation}
+              disabled={isStartingChat}>
+              {isStartingChat ? (
+                <ActivityIndicator color={colors.paperElevated} />
+              ) : (
+                <>
+                  <Ionicons name="chatbubble-outline" size={16} color={colors.paperElevated} />
+                  <Text style={styles.messageButtonText}>Enviar mensaje</Text>
+                </>
+              )}
+            </Pressable>
+          </RNView>
         ) : null}
       </View>
 
@@ -824,6 +935,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.inkSoft,
   },
+  orderSubText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.inkSoft,
+    marginTop: 2,
+  },
   soldButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -832,6 +949,36 @@ const styles = StyleSheet.create({
     backgroundColor: colors.olive,
     borderRadius: radii.sm,
     paddingVertical: 13,
+  },
+  footerStack: {
+    gap: spacing.sm,
+  },
+  mpButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.brick,
+    borderRadius: radii.sm,
+    paddingVertical: 13,
+  },
+  orderNotice: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: 6,
+  },
+  orderNoticeText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.inkSoft,
+  },
+  confirmButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.olive,
+    borderRadius: radii.sm,
+    paddingVertical: 13,
+    width: '100%',
   },
   modalBackdrop: {
     flex: 1,

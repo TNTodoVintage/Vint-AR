@@ -159,6 +159,45 @@ export type ReportInsert = {
   created_at?: string;
 }
 
+export type OrderStatus =
+  | 'pending'
+  | 'paid'
+  | 'confirmed'
+  | 'released'
+  | 'rejected'
+  | 'cancelled';
+
+export type Order = {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  amount: number;
+  status: OrderStatus;
+  mp_preference_id: string | null;
+  mp_payment_id: string | null;
+  buyer_confirmed_at: string | null;
+  released_at: string | null;
+  created_at: string;
+}
+
+// The app never inserts/updates orders directly (only the Edge Functions do,
+// with the service role key) — this exists only so the Tables map below has
+// a structurally complete entry.
+export type OrderInsert = {
+  id?: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  amount: number;
+  status?: OrderStatus;
+  mp_preference_id?: string | null;
+  mp_payment_id?: string | null;
+  buyer_confirmed_at?: string | null;
+  released_at?: string | null;
+  created_at?: string;
+}
+
 // Database shape for @supabase/supabase-js's typed client. Shaped like the
 // output of `supabase gen types typescript` (each table needs Relationships,
 // each schema needs Views/Functions) so the postgrest-js generics resolve.
@@ -216,11 +255,21 @@ export type Database = {
         Update: Partial<Report>;
         Relationships: [];
       };
+      orders: {
+        Row: Order;
+        Insert: OrderInsert;
+        Update: Partial<Order>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
       delete_own_account: {
         Args: Record<PropertyKey, never>;
+        Returns: undefined;
+      };
+      confirm_order_received: {
+        Args: { target_order_id: string };
         Returns: undefined;
       };
     };

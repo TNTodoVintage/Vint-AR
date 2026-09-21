@@ -97,6 +97,10 @@ function AuthGate() {
       />
       <Stack.Screen name="listing/[id]" options={{ title: '' }} />
       <Stack.Screen name="chat/[conversationId]" options={{ title: 'Chat' }} />
+      <Stack.Screen
+        name="payment-result"
+        options={{ presentation: 'modal', title: '', headerShown: false }}
+      />
     </Stack>
   );
 }

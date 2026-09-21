@@ -396,3 +396,85 @@ end;
 $$;
 
 grant execute on function public.delete_own_account() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- orders: pagos con Mercado Pago, con retención hasta que el comprador
+-- confirma que recibió el artículo (estilo Mercado Libre). La plata entra a
+-- la cuenta de Mercado Pago del negocio (no hay split automático); una vez
+-- que el pedido queda "confirmed", el pago al vendedor se hace a mano por
+-- fuera de la app (transferencia) y se marca "released" en Supabase.
+-- ---------------------------------------------------------------------------
+
+create table if not exists orders (
+  id uuid primary key default gen_random_uuid(),
+  listing_id uuid not null references listings(id) on delete cascade,
+  buyer_id uuid not null references profiles(id) on delete cascade,
+  seller_id uuid not null references profiles(id) on delete cascade,
+  amount numeric not null check (amount >= 0),
+  status text not null default 'pending'
+    check (status in ('pending', 'paid', 'confirmed', 'released', 'rejected', 'cancelled')),
+  mp_preference_id text,
+  mp_payment_id text,
+  buyer_confirmed_at timestamptz,
+  released_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists orders_listing_id_idx on orders(listing_id);
+create index if not exists orders_buyer_id_idx on orders(buyer_id);
+create index if not exists orders_seller_id_idx on orders(seller_id);
+create index if not exists orders_status_idx on orders(status);
+
+alter table orders enable row level security;
+
+-- solo comprador y vendedor de ese pedido lo pueden ver.
+create policy "participants can view orders"
+  on orders for select
+  using (auth.uid() = buyer_id or auth.uid() = seller_id);
+
+-- Nadie inserta ni actualiza pedidos directo por la API: los crea y los
+-- mueve de estado la Edge Function (con la service_role key, que no está
+-- sujeta a RLS) al hablar con Mercado Pago. La única acción que puede hacer
+-- el comprador desde el cliente es "confirmar que llegó", y para eso usa la
+-- función de abajo en vez de un UPDATE directo — así no puede tocar otros
+-- campos (monto, estado a "released", etc.).
+
+create or replace function public.confirm_order_received(target_order_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update orders
+  set status = 'confirmed', buyer_confirmed_at = now()
+  where id = target_order_id
+    and buyer_id = auth.uid()
+    and status = 'paid';
+
+  if not found then
+    raise exception 'No se pudo confirmar: el pedido no existe, no sos el comprador de ese pedido, o todavía no está pagado.';
+  end if;
+end;
+$$;
+
+grant execute on function public.confirm_order_received(uuid) to authenticated;
+
+-- Si el comprador no confirma en 7 días, se confirma solo (así el vendedor
+-- no queda esperando para siempre). Requiere la extensión pg_cron — si el
+-- proyecto no la tiene habilitada, activarla desde el Dashboard de Supabase
+-- en Database → Extensions antes de correr esto.
+create extension if not exists pg_cron with schema extensions;
+
+select
+  cron.schedule(
+    'auto-confirm-orders',
+    '0 3 * * *',
+    $$
+    update orders
+    set status = 'confirmed', buyer_confirmed_at = now()
+    where status = 'paid' and created_at < now() - interval '7 days';
+    $$
+  )
+where not exists (
+  select 1 from cron.job where jobname = 'auto-confirm-orders'
+);
