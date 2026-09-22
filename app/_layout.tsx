@@ -1,4 +1,5 @@
 import { DefaultTheme, Stack, ThemeProvider, router, useSegments } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
@@ -11,6 +12,7 @@ import {
 
 import { colors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { useRegisterPushToken } from '@/lib/push-notifications';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -73,6 +75,8 @@ function AuthGate() {
   const { session, isLoading } = useAuth();
   const segments = useSegments();
 
+  useRegisterPushToken(session?.user.id ?? null);
+
   useEffect(() => {
     if (isLoading) return;
     const inAuthGroup = segments[0] === '(auth)';
@@ -82,6 +86,24 @@ function AuthGate() {
       router.replace('/(tabs)');
     }
   }, [session, isLoading, segments]);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as
+        | { type?: string; conversationId?: string; listingId?: string }
+        | undefined;
+      if (!data) return;
+      if (data.type === 'message' && data.conversationId) {
+        router.push({
+          pathname: '/chat/[conversationId]',
+          params: { conversationId: data.conversationId },
+        });
+      } else if (data.type === 'order' && data.listingId) {
+        router.push({ pathname: '/listing/[id]', params: { id: data.listingId } });
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   if (isLoading) {
     return null;

@@ -16,8 +16,11 @@ create table if not exists profiles (
   name text check (char_length(name) <= 60),
   avatar_url text,
   location text check (location is null or char_length(location) <= 120),
+  push_token text,
   created_at timestamptz not null default now()
 );
+
+alter table profiles add column if not exists push_token text;
 
 create table if not exists listings (
   id uuid primary key default gen_random_uuid(),

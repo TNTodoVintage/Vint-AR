@@ -7,6 +7,7 @@ export type Profile = {
   name: string | null;
   avatar_url: string | null;
   location: string | null;
+  push_token: string | null;
   created_at: string;
 }
 
@@ -15,6 +16,7 @@ export type ProfileInsert = {
   name?: string | null;
   avatar_url?: string | null;
   location?: string | null;
+  push_token?: string | null;
   created_at?: string;
 }
 
