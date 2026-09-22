@@ -96,6 +96,22 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Cada intento le pega a la API de Mercado Pago y crea una fila nueva —
+    // si alguien toca el botón repetidas veces (o intenta abusar del
+    // endpoint), esto limita cuántos pedidos puede iniciar en poco tiempo.
+    const { count: recentOrders } = await admin
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('buyer_id', user.id)
+      .gte('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString());
+
+    if ((recentOrders ?? 0) >= 5) {
+      return new Response(
+        JSON.stringify({ error: 'Estás iniciando muchos pagos muy rápido. Esperá un minuto e intentá de nuevo.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { data: order, error: orderError } = await admin
       .from('orders')
       .insert({

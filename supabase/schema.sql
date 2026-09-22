@@ -481,3 +481,89 @@ select
 where not exists (
   select 1 from cron.job where jobname = 'auto-confirm-orders'
 );
+
+-- ---------------------------------------------------------------------------
+-- Rate limiting: un límite por usuario a nivel de aplicación para que una
+-- sola cuenta (o una comprometida) no pueda saturar el chat, el feed de
+-- publicaciones o el sistema de reportes mandando muchas filas por segundo.
+-- Esto es aparte de las protecciones de red que ya trae la infraestructura
+-- de Supabase — este límite es específico de cada tabla y cada usuario.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.enforce_message_rate_limit()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  recent_count int;
+begin
+  select count(*) into recent_count
+  from messages
+  where from_id = new.from_id
+    and created_at > now() - interval '1 minute';
+
+  if recent_count >= 20 then
+    raise exception 'Estás enviando mensajes demasiado rápido. Esperá un momento e intentá de nuevo.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_message_rate_limit on messages;
+create trigger on_message_rate_limit
+  before insert on messages
+  for each row execute procedure public.enforce_message_rate_limit();
+
+create or replace function public.enforce_listing_rate_limit()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  recent_count int;
+begin
+  select count(*) into recent_count
+  from listings
+  where seller_id = new.seller_id
+    and created_at > now() - interval '1 hour';
+
+  if recent_count >= 10 then
+    raise exception 'Publicaste demasiados artículos en poco tiempo. Probá de nuevo más tarde.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_listing_rate_limit on listings;
+create trigger on_listing_rate_limit
+  before insert on listings
+  for each row execute procedure public.enforce_listing_rate_limit();
+
+create or replace function public.enforce_report_rate_limit()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  recent_count int;
+begin
+  select count(*) into recent_count
+  from reports
+  where reporter_id = new.reporter_id
+    and created_at > now() - interval '1 hour';
+
+  if recent_count >= 20 then
+    raise exception 'Hiciste demasiados reportes en poco tiempo. Probá de nuevo más tarde.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_report_rate_limit on reports;
+create trigger on_report_rate_limit
+  before insert on reports
+  for each row execute procedure public.enforce_report_rate_limit();
